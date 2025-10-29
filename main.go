@@ -2,10 +2,8 @@ package main
 
 import (
     "sync/atomic"
-    "io"
     "log"
     "net/http"
-    "fmt"
 )
 
 type apiConfig struct {
@@ -21,11 +19,14 @@ func main() {
     }
 
     mux := http.NewServeMux()
-    mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))))
+    fsHandler := apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot))))
+    mux.Handle("/app/", fsHandler)
+
     mux.HandleFunc("GET /api/healthz", handlerReadiness)
+    mux.HandleFunc("POST /api/validate_chirp", handlerValidate)
+
     mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
     mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
-    mux.HandleFunc("POST /api/validate_chirp", handlerValidate)
 
     srv := &http.Server{
 	Addr: ":" + port,
@@ -36,25 +37,4 @@ func main() {
     log.Fatal(srv.ListenAndServe())
 
 }
-
-func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
-    w.Header().Add("Content-Type", "text/html; charset=utf-8")
-    w.WriteHeader(http.StatusOK)
-    io.WriteString(w, fmt.Sprintf(`
-	<html>
-	  <body>
-	    <h1>Welcome, Chirpy Admin</h1>
-	    <p>Chirpy has been visited %d times!</p>
-	  </body>
-	</html>`, cfg.fileserverHits.Load()))
-}
-
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	cfg.fileserverHits.Add(1)
-	next.ServeHTTP(w, r)
-    })
-}
-
-
 

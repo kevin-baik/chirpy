@@ -3,59 +3,48 @@ package main
 import (
     "net/http"
     "encoding/json"
-    "log"
+    "strings"
 )
 
 func handlerValidate(w http.ResponseWriter, r *http.Request) {
-    type chirpBody struct {
+    defer r.Body.Close()
+    type requestBody struct {
 	Body string `json:"body"`
     }
-    type chirpError struct {
-	Error string `json:"error"`
-    }
-    type chirpValid struct {
-	Valid bool `json:"valid"`
+    type responseBody struct {
+	CleanedBody string `json:"cleaned_body"`
     }
 
     decoder := json.NewDecoder(r.Body)
-    chirp := chirpBody{}
-    err := decoder.Decode(&chirp)
+    params := requestBody{}
+    err := decoder.Decode(&params)
     if err != nil {
-	log.Printf("Error decoding chirp body: %s", err)
-	w.WriteHeader(500)
+	respondWithError(w, http.StatusInternalServerError, "Unable to decode request body", err)
 	return
     }
-    if len(chirp.Body) > 140 {
-	respBody := chirpError{
-	    Error: "Chirp is too long",
-	}
-	dat, err := json.Marshal(respBody)
-	if err != nil {
-	    log.Printf("Error marshalling JSON: %s", err)
-	    w.WriteHeader(500)
-	    return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	w.Write(dat)
+    const maxChirpLength = 140
+    if len(params.Body) > maxChirpLength {
+	respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
 	return
     }
-
-    respBody := chirpValid{
-	Valid: true,	
-    }
-
-    dat, err := json.Marshal(respBody)
-    if err != nil {
-	log.Printf("Error marshalling JSON: %s", err)
-	w.WriteHeader(500)
-	return
-    }
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(200)
-    w.Write(dat)
-    return
-
     
-    
+    respondWithJSON(w, http.StatusOK, responseBody{
+	CleanedBody: replaceBadWords(params.Body),
+    })
+
+}
+
+func replaceBadWords(str string) string {
+    badWords := map[string]bool{
+	"kerfuffle": true,
+	"sharbert": true,
+	"fornax": true,
+    }
+    strSplit := strings.Split(str, " ")
+    for i, word := range strSplit {
+	if badWords[strings.ToLower(word)] {
+	    strSplit[i] = "****"
+	}
+    }
+    return strings.Join(strSplit, " ")
 }
